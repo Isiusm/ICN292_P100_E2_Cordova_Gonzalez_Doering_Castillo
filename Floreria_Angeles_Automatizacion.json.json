@@ -1,0 +1,155 @@
+{
+  "name": "Florería Ángeles - Automatización de fechas importantes",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "b795da91-2874-49cc-a2ca-467d4f188732",
+      "name": "Revisión diaria de fechas"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst clientes = $input.all();\n\nconst hoy = new Date();\n\nconst inicioHoy = Date.UTC(\n  hoy.getFullYear(),\n  hoy.getMonth(),\n  hoy.getDate()\n);\n\nconst proximos = [];\n\nfor (const item of clientes) {\n\n  const fecha = item.json.fecha_importante;\n\n  // Ignorar fechas vacías o inválidas\n  if (\n    typeof fecha !== \"string\" ||\n    !/^\\d{4}-\\d{2}-\\d{2}$/.test(fecha)\n  ) {\n    continue;\n  }\n\n  const [anio, mes, dia] = fecha.split(\"-\").map(Number);\n\n  const fechaUTC = Date.UTC(anio, mes - 1, dia);\n\n  const diasRestantes = Math.round(\n    (fechaUTC - inicioHoy) / 86400000\n  );\n\n  // Seleccionar fechas entre hoy y los próximos 7 días\n  if (diasRestantes >= 0 && diasRestantes <= 7) {\n\n    proximos.push({\n      json: {\n        ...item.json,\n        dias_restantes: diasRestantes\n      }\n    });\n\n  }\n}\n\nreturn proximos;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ],
+      "id": "c7eeb280-208d-485a-a0a7-6e84775a1cf6",
+      "name": "Identificación de fechas próximas"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst clientes = $input.all();\n\nreturn clientes.map(item => {\n  const c = item.json;\n\n  return {\n    json: {\n      ...c,\n      recordatorio: `Hola Paulina. Recuerda que ${c.nombre} tiene un ${c.tipo_fecha.toLowerCase()} el ${c.fecha_importante}. Faltan ${c.dias_restantes} días. Puedes contactarlo para ofrecer un arreglo floral.`\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        0
+      ],
+      "id": "fc5c5bd6-c81d-40cd-b712-014ff9e738c1",
+      "name": "Generación de recordatorios"
+    },
+    {
+      "parameters": {
+        "fromEmail": "isidorarenata@gmail.com",
+        "toEmail": "isidorarenata@gmail.com",
+        "subject": " Recordatorio de fechas importantes - Florería Ángeles",
+        "html": "=={{ `\n<h2>Recordatorio de fecha importante</h2>\n\n<p>Hola Paulina,</p>\n\n<p>Te recordamos que tienes una fecha importante próxima:</p>\n\n<p>\n<strong>Cliente:</strong> ${$json.nombre}<br>\n<strong>Teléfono:</strong> ${$json.telefono}<br>\n<strong>Motivo:</strong> ${$json.tipo_fecha}<br>\n<strong>Fecha:</strong> ${$json.fecha_importante}\n</p>\n\n<p>Faltan <strong>${$json.dias_restantes} días</strong> para esta fecha.</p>\n\n<p>Puedes contactar al cliente mediante WhatsApp para ofrecerle un arreglo floral.</p>\n\n<p>Saludos,<br><strong>Sistema de Gestión - Florería Ángeles</strong></p>\n` }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        848,
+        0
+      ],
+      "id": "a60671c7-2ecb-43bb-8929-940e21651c83",
+      "name": "Notificación a Paulina",
+      "webhookId": "505b44f5-b351-4740-b8e6-254fcef5a024",
+      "credentials": {
+        "smtp": {
+          "id": "kGy8yuGT059S822A",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n    c.id_cliente,\n    CONCAT(c.nombre, ' ', c.apellido) AS nombre,\n    c.telefono,\n    o.nombre AS tipo_fecha,\n\n    DATE_FORMAT(\n        CASE\n            WHEN o.es_anual = 1 THEN\n                CASE\n                    WHEN STR_TO_DATE(\n                        CONCAT(YEAR(CURDATE()), '-',\n                        LPAD(fi.mes, 2, '0'), '-',\n                        LPAD(fi.dia, 2, '0')),\n                        '%Y-%m-%d'\n                    ) >= CURDATE()\n                    THEN STR_TO_DATE(\n                        CONCAT(YEAR(CURDATE()), '-',\n                        LPAD(fi.mes, 2, '0'), '-',\n                        LPAD(fi.dia, 2, '0')),\n                        '%Y-%m-%d'\n                    )\n                    ELSE DATE_ADD(\n                        STR_TO_DATE(\n                            CONCAT(YEAR(CURDATE()), '-',\n                            LPAD(fi.mes, 2, '0'), '-',\n                            LPAD(fi.dia, 2, '0')),\n                            '%Y-%m-%d'\n                        ),\n                        INTERVAL 1 YEAR\n                    )\n                END\n            ELSE STR_TO_DATE(\n                CONCAT(fi.anio, '-',\n                LPAD(fi.mes, 2, '0'), '-',\n                LPAD(fi.dia, 2, '0')),\n                '%Y-%m-%d'\n            )\n        END,\n        '%Y-%m-%d'\n    ) AS fecha_importante\n\nFROM fecha_importante fi\n\nINNER JOIN cliente c\n    ON fi.id_cliente = c.id_cliente\n\nINNER JOIN tipo_ocasion o\n    ON fi.id_ocasion = o.id_ocasion\n\nWHERE fi.activa = 1\nAND c.acepta_recordatorios = 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.5,
+      "position": [
+        224,
+        0
+      ],
+      "id": "0ac0569f-6292-45db-8a0f-16ded7ee103a",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "mySql": {
+          "id": "Jf9GN7W9uFNP9hGI",
+          "name": "MySQL account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Revisión diaria de fechas": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identificación de fechas próximas": {
+      "main": [
+        [
+          {
+            "node": "Generación de recordatorios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generación de recordatorios": {
+      "main": [
+        [
+          {
+            "node": "Notificación a Paulina",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Identificación de fechas próximas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "5782e0fd-887a-4d17-a972-6ea8367553a2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "05258b2163454c59ccce59947fe6035f1a75aca69eb25e33d8adb764258b1888"
+  },
+  "nodeGroups": [],
+  "id": "vek5z3vCpUgrvkKf",
+  "tags": []
+}
